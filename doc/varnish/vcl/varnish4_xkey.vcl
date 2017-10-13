@@ -203,16 +203,17 @@ sub vcl_deliver {
 
     // If we get here, this is a real response that gets sent to the client.
 
-    // Remove the vary on user context hash, this is nothing public. Keep all
-    // other vary headers.
-    set resp.http.Vary = regsub(resp.http.Vary, "(?i),? *X-User-Hash *", "");
-    set resp.http.Vary = regsub(resp.http.Vary, "^, *", "");
-    if (resp.http.Vary == "") {
-        unset resp.http.Vary;
-    }
+    // Remove the private vary on user context hash, and set caches varying to privat for end clients
+    if (resp.http.Vary ~ "X-User-Hash") {
+        set resp.http.Vary = regsub(resp.http.Vary, "(?i),? *X-User-Hash *", "");
+        set resp.http.Vary = regsub(resp.http.Vary, "^, *", "");
+        if (resp.http.Vary == "") {
+            unset resp.http.Vary;
+        }
 
-    // Sanity check to prevent ever exposing the hash to a client.
-    unset resp.http.x-user-hash;
+        // If we vary by user hash we avoid shared proxies and browsers caching this
+        resp.http.cache-control = "private, no-store"
+    }
 
     if (client.ip ~ debuggers) {
         if (resp.http.X-Varnish ~ " ") {
@@ -223,5 +224,7 @@ sub vcl_deliver {
     } else {
         // Remove tag headers when delivering to non debug client
         unset resp.http.xkey;
+        // Sanity check to prevent ever exposing the hash to a non debug client.
+        unset resp.http.x-user-hash;
     }
 }
